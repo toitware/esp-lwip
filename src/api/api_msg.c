@@ -597,6 +597,11 @@ accept_function(void *arg, struct tcp_pcb *newpcb, err_t err)
     tcp_err(pcb, NULL);
     /* remove reference from to the pcb from this netconn */
     newconn->pcb.tcp = NULL;
+#if ESP_LWIP
+#if LWIP_NETCONN_FULLDUPLEX
+    newconn->flags |= NETCONN_FLAG_MBOXINVALID;
+#endif /* LWIP_NETCONN_FULLDUPLEX */
+#endif /* ESP_LWIP */   
     /* no need to drain since we know the recvmbox is empty. */
     sys_mbox_free(&newconn->recvmbox);
     sys_mbox_set_invalid(&newconn->recvmbox);
@@ -898,6 +903,9 @@ netconn_drain(struct netconn *conn)
           /* Only tcp pcbs have an acceptmbox, so no need to check conn->type */
           /* pcb might be set to NULL already by err_tcp() */
           /* drain recvmbox */
+#if ESP_LWIP
+          newconn->flags |= NETCONN_FLAG_MBOXINVALID;
+#endif /* ESP_LWIP */
           netconn_drain(newconn);
           if (newconn->pcb.tcp != NULL) {
             tcp_abort(newconn->pcb.tcp);
@@ -922,8 +930,11 @@ netconn_mark_mbox_invalid(struct netconn *conn)
 
   /* Prevent new calls/threads from reading from the mbox */
   conn->flags |= NETCONN_FLAG_MBOXINVALID;
-
+#if ESP_LWIP_LOCK
   SYS_ARCH_LOCKED(num_waiting = conn->mbox_threads_waiting);
+#else
+  num_waiting = conn->mbox_threads_waiting;
+#endif /* ESP_LWIP_LOCK */  
   for (i = 0; i < num_waiting; i++) {
     if (sys_mbox_valid_val(conn->recvmbox)) {
       sys_mbox_trypost(&conn->recvmbox, msg);
@@ -1143,6 +1154,9 @@ lwip_netconn_do_delconn(void *m)
   enum netconn_state state = msg->conn->state;
   LWIP_ASSERT("netconn state error", /* this only happens for TCP netconns */
               (state == NETCONN_NONE) || (NETCONNTYPE_GROUP(msg->conn->type) == NETCONN_TCP));
+#if ESP_LWIP
+  msg->err = ERR_OK;
+#endif              
 #if LWIP_NETCONN_FULLDUPLEX
   /* In full duplex mode, blocking write/connect is aborted with ERR_CLSD */
   if (state != NETCONN_NONE) {
@@ -1155,6 +1169,9 @@ lwip_netconn_do_delconn(void *m)
       msg->conn->current_msg->err = ERR_CLSD;
       msg->conn->current_msg = NULL;
       msg->conn->state = NETCONN_NONE;
+#if ESP_LWIP
+      msg->err = ERR_INPROGRESS;
+#endif
       sys_sem_signal(op_completed_sem);
     }
   }
@@ -1169,9 +1186,11 @@ lwip_netconn_do_delconn(void *m)
   } else
 #endif /* LWIP_NETCONN_FULLDUPLEX */
   {
+#if !ESP_LWIP    
     LWIP_ASSERT("blocking connect in progress",
                 (state != NETCONN_CONNECT) || IN_NONBLOCKING_CONNECT(msg->conn));
     msg->err = ERR_OK;
+#endif /* ESP_LWIP */                
 #if LWIP_NETCONN_FULLDUPLEX
     /* Mark mboxes invalid */
     netconn_mark_mbox_invalid(msg->conn);

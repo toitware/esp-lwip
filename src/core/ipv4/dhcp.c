@@ -542,6 +542,11 @@ dhcp_timeout(struct netif *netif)
       dhcp_discover(netif);
     }
   }
+#if ESP_DHCP
+  else if (dhcp->state == DHCP_STATE_REBINDING) {
+    dhcp->t2_rebind_time = 1;
+  }
+#endif
 }
 
 /**
@@ -571,7 +576,7 @@ dhcp_t1_timeout(struct netif *netif)
     if (((dhcp->t2_timeout - dhcp->lease_used) / 2) >= ((60 + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS))
 #endif
     {
-      dhcp->t1_renew_time = (u16_t)((dhcp->t2_timeout - dhcp->lease_used) / 2);
+      dhcp->t1_renew_time = ((dhcp->t2_timeout - dhcp->lease_used) / 2);
     }
   }
 }
@@ -601,8 +606,8 @@ dhcp_t2_timeout(struct netif *netif)
 #else
     if (((dhcp->t0_timeout - dhcp->lease_used) / 2) >= ((60 + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS))
 #endif
-     {
-      dhcp->t2_rebind_time = (u16_t)((dhcp->t0_timeout - dhcp->lease_used) / 2);
+    {
+      dhcp->t2_rebind_time = ((dhcp->t0_timeout - dhcp->lease_used) / 2);
     }
   }
 }
@@ -1056,6 +1061,12 @@ dhcp_discover(struct netif *netif)
 
     options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_MAX_MSG_SIZE, DHCP_OPTION_MAX_MSG_SIZE_LEN);
     options_out_len = dhcp_option_short(options_out_len, msg_out->options, DHCP_MAX_MSG_LEN(netif));
+
+#if ESP_DHCP
+#if LWIP_NETIF_HOSTNAME
+    options_out_len = dhcp_option_hostname(options_out_len, msg_out->options, netif);
+#endif /* LWIP NETIF HOSTNAME */
+#endif /* ESP_DHCP */
 
     options_out_len = dhcp_option(options_out_len, msg_out->options, DHCP_OPTION_PARAMETER_REQUEST_LIST, LWIP_ARRAYSIZE(dhcp_discover_request_options));
     for (i = 0; i < LWIP_ARRAYSIZE(dhcp_discover_request_options); i++) {

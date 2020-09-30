@@ -174,7 +174,15 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
     }
     /* Again, do not use any other netif in this case, as that could result in
      * zone boundary violations. */
+#if ESP_IPV6
+    if (ip6_addr_ismulticast(dest) && ip6_addr_isany(src)) { 
+      return netif_default;
+    } else {
+      return NULL;
+    }
+#else
     return NULL;
+#endif /* ESP_IPV6 */
   }
 
   /* We come here only if neither source nor destination is scoped. */
@@ -1263,6 +1271,8 @@ ip6_output_if_src(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
   if (netif_mtu6(netif) && (p->tot_len > nd6_get_destination_mtu(dest, netif))) {
     return ip6_frag(p, netif, dest);
   }
+#else
+  LWIP_ERROR("ip6_output_if: Packets larger than MTU, discarded!!!",!(netif->mtu && p->tot_len > netif->mtu),return ERR_IF;);
 #endif /* LWIP_IPV6_FRAG */
 
   LWIP_DEBUGF(IP6_DEBUG, ("netif->output_ip6()\n"));
